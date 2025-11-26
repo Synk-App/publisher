@@ -9,8 +9,10 @@ import (
 
 func Router(service *Service) {
 	aboutController := controller.NewAbout(service.DB)
+	xController := controller.NewX(service.DB)
 
 	http.HandleFunc("GET /about", aboutController.HandleAbout)
+	http.HandleFunc("GET /x/auth", xController.HandleAuth)
 
 	port := os.Getenv("PORT")
 	util.Log("app running on port " + port)
