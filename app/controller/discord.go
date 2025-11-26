@@ -16,11 +16,18 @@ type Discord struct {
 
 type HandleDiscordPublishResponse struct {
 	Resource ResponseHeader                   `json:"resource"`
-	Post     HandleDiscordPublishDataResponse `json:"post"`
+	Post     HandleDiscordPublishInfoResponse `json:"post"`
 	Raw      any                              `json:"raw"`
 }
 
 type HandleDiscordPublishDataResponse struct {
+	Id        string `json:"id"`
+	ChannelId string `json:"channel_id"`
+	WebhookId string `json:"webhook_id"`
+	Message   string `json:"message"`
+}
+
+type HandleDiscordPublishInfoResponse struct {
 	Id        string `json:"id"`
 	ChannelId string `json:"channel_id"`
 	WebhookId string `json:"webhook_id"`
@@ -46,7 +53,7 @@ func (d *Discord) HandlePublish(w http.ResponseWriter, r *http.Request) {
 		Resource: ResponseHeader{
 			Ok: true,
 		},
-		Post: HandleDiscordPublishDataResponse{},
+		Post: HandleDiscordPublishInfoResponse{},
 	}
 
 	bodyContent, bodyErr := io.ReadAll(r.Body)
@@ -115,7 +122,22 @@ func (d *Discord) HandlePublish(w http.ResponseWriter, r *http.Request) {
 
 	response.Raw = string(bodyBytes)
 
-	json.Unmarshal(bodyBytes, &response.Post)
+	var responseContent HandleDiscordPublishDataResponse
+
+	json.Unmarshal(bodyBytes, &responseContent)
+
+	if responseContent.Id == "" {
+		response.Resource.Ok = false
+		response.Resource.Error = responseContent.Message
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, respMessage.StatusCode)
+
+		return
+	}
+
+	response.Post.ChannelId = responseContent.ChannelId
+	response.Post.WebhookId = responseContent.WebhookId
+	response.Post.Id = responseContent.Id
 
 	WriteSuccessResponse(w, response)
 }
