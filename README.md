@@ -47,3 +47,35 @@ docker network create synk_network
 	"list": null
 }
 ```
+
+## Send message through Discord
+
+> `GET` /discord/publish
+
+### Request
+
+> `webhook_url` can be get in the text chat settings on a server from Discord. So in that settings access Integrations > Webhooks > New Webhook.
+
+```json
+{
+	"message": "showwwwwwwwwwwwww",
+	"webhook_url": "https://discord.com/api/webhooks/123456789/asadsadfasdwefef323112ewefdwed"
+}
+```
+
+### Response
+
+```json
+{
+	"resource": {
+		"ok": true,
+		"error": ""
+	},
+	"post": {
+		"id": "123456789",
+		"channel_id": "123456789",
+		"webhook_id": "123456789"
+	},
+	"raw": "{\"type\":0,\"content\":\"showwwwwwwwwwwwww\",\"mentions\":[],\"mention_roles\":[],\"attachments\":[],\"embeds\":[],\"timestamp\":\"2025-11-26T00:23:48.134000+00:00\",\"edited_timestamp\":null,\"flags\":0,\"components\":[],\"id\":\"123456789\",\"channel_id\":\"123456789\",\"author\":{\"id\":\"123456789\",\"username\":\"Captain Hook\",\"avatar\":null,\"discriminator\":\"0000\",\"public_flags\":0,\"flags\":0,\"bot\":true,\"global_name\":null,\"clan\":null,\"primary_guild\":null},\"pinned\":false,\"mention_everyone\":false,\"tts\":false,\"webhook_id\":\"123456789\"}\n"
+}
+```
