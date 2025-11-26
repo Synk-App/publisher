@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"synk/gateway/app/model"
 )
@@ -16,19 +18,29 @@ type Telegram struct {
 
 type HandleTelegramPublishResponse struct {
 	Resource ResponseHeader                    `json:"resource"`
-	Post     HandleTelegramPublishDataResponse `json:"post"`
+	Post     HandleTelegramPublishInfoResponse `json:"post"`
 	Raw      any                               `json:"raw"`
 }
 
+type HandleTelegramPublishInfoResponse struct {
+	MessageId string `json:"message_id"`
+}
+
 type HandleTelegramPublishDataResponse struct {
-	Id        string `json:"id"`
-	ChannelId string `json:"channel_id"`
-	WebhookId string `json:"webhook_id"`
+	Ok          bool   `json:"ok"`
+	Description string `json:"description"`
+	Result      struct {
+		MessageID int `json:"message_id"`
+		Chat      struct {
+			ID int64 `json:"id"`
+		} `json:"chat"`
+	} `json:"result"`
 }
 
 type HandleTelegramPublishRequest struct {
-	Message    string `json:"message"`
-	WebhookUrl string `json:"webhook_url"`
+	Message  string `json:"message"`
+	BotToken string `json:"bot_token"`
+	ChatId   string `json:"chat_id"`
 }
 
 func NewTelegram(db *sql.DB) *Telegram {
@@ -46,7 +58,7 @@ func (d *Telegram) HandlePublish(w http.ResponseWriter, r *http.Request) {
 		Resource: ResponseHeader{
 			Ok: true,
 		},
-		Post: HandleTelegramPublishDataResponse{},
+		Post: HandleTelegramPublishInfoResponse{},
 	}
 
 	bodyContent, bodyErr := io.ReadAll(r.Body)
@@ -73,21 +85,22 @@ func (d *Telegram) HandlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	post.BotToken = strings.TrimSpace(post.BotToken)
+	post.ChatId = strings.TrimSpace(post.ChatId)
 	post.Message = strings.TrimSpace(post.Message)
-	post.WebhookUrl = strings.TrimSpace(post.WebhookUrl)
 
-	if post.Message == "" || post.WebhookUrl == "" {
+	if post.BotToken == "" || post.ChatId == "" || post.Message == "" {
 		response.Resource.Ok = false
-		response.Resource.Error = "field `message` and `webhook_url` can not be empty"
+		response.Resource.Error = "field `bot_token`, `chat_id` and `message` can not be empty"
 
 		WriteErrorResponse(w, response, "/telegram/publish", response.Resource.Error, http.StatusBadRequest)
 
 		return
 	}
 
-	post.WebhookUrl += "?wait=true" // To return response body
+	endpointUrl := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", post.BotToken)
 
-	payload := map[string]string{"content": post.Message}
+	payload := map[string]string{"chat_id": post.ChatId, "text": post.Message}
 	jsonPayload, jsonPayloadErr := json.Marshal(payload)
 
 	if jsonPayloadErr != nil {
@@ -99,7 +112,7 @@ func (d *Telegram) HandlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respMessage, errMessage := http.Post(post.WebhookUrl, "application/json", bytes.NewBuffer(jsonPayload))
+	respMessage, errMessage := http.Post(endpointUrl, "application/json", bytes.NewBuffer(jsonPayload))
 	if errMessage != nil {
 		response.Resource.Ok = false
 		response.Resource.Error = errMessage.Error()
@@ -115,7 +128,20 @@ func (d *Telegram) HandlePublish(w http.ResponseWriter, r *http.Request) {
 
 	response.Raw = string(bodyBytes)
 
-	json.Unmarshal(bodyBytes, &response.Post)
+	var responseContent HandleTelegramPublishDataResponse
+
+	json.Unmarshal(bodyBytes, &responseContent)
+
+	if !responseContent.Ok {
+		response.Resource.Ok = false
+		response.Resource.Error = responseContent.Description
+
+		WriteErrorResponse(w, response, "/telegram/publish", response.Resource.Error, respMessage.StatusCode)
+
+		return
+	}
+
+	response.Post.MessageId = strconv.Itoa(responseContent.Result.MessageID)
 
 	WriteSuccessResponse(w, response)
 }
