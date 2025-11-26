@@ -27,6 +27,89 @@ You can use a custom network for this services, using then `synk_network` you mu
 docker network create synk_network
 ```
 
+# Setup integrations
+
+## Discord
+
+**Benefícios:**
+
+- O Truque: Não crie um Bot. Use um Webhook.
+- Por que é fácil: Você não precisa de autenticação OAuth, nem de tokens complexos. O Discord te dá uma URL única; qualquer JSON que você enviar para lá vira uma mensagem.
+
+**Como fazer:**
+
+1. Crie um servidor seu no Discord.
+2. Vá nas configurações de um canal de texto -> Integrações -> Webhooks.
+3. Crie um novo Webhook e copie a URL do Webhook.
+
+**Exemplo:**
+
+```go
+type DiscordResponse struct {
+	ID        string `json:"id"`
+	ChannelID string `json:"channel_id"`
+	Content   string `json:"content"`
+}
+
+func PostToDiscord(content string) (string, error) {
+	webhookURL := "YOUR_WEBHOOK_URL_HERE" + "?wait=true"
+
+	payload := map[string]string{"content": content}
+	jsonPayload, _ := json.Marshal(payload)
+
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("discord returned status: %d", resp.StatusCode)
+	}
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+
+	var result DiscordResponse
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		return "", err
+	}
+
+	fmt.Printf("Message posted successfully! ID: %s\n", result.ID)
+
+	return result.ID, nil
+}
+```
+
+## Telegram
+
+**Benefícios:**
+
+- Por que é fácil: Você fala com um bot chamado @BotFather, ele te dá um token e pronto. A API é uma URL simples.
+
+**Como fazer:**
+
+1. Abra o Telegram e procure por `@BotFather`.
+2. Envie `/newbot`, dê um nome e um username.
+3. Ele te dará um token (ex: `123456:ABC-DEF...`).
+4. Você precisará saber o `chat_id` para onde enviar (mande uma mensagem para seu bot e acesse `https://api.telegram.org/bot<SEU_TOKEN>/getUpdates` para descobrir seu ID).
+
+**Exemplo:**
+
+```go
+func PostToTelegram(content string) error {
+    botToken := "SEU_TOKEN"
+    chatID := "SEU_CHAT_ID"
+
+    apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s", botToken, chatID, url.QueryEscape(content))
+
+    resp, err := http.Get(apiURL)
+    if err != nil { return err }
+    defer resp.Body.Close()
+
+    return nil
+}
+```
+
 # Routes
 
 ## Get info about app
