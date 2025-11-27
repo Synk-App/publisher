@@ -1,0 +1,143 @@
+package controller
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"synk/gateway/app/model"
+)
+
+type Discord struct {
+	model *model.Discord
+}
+
+type HandleDiscordPublishResponse struct {
+	Resource ResponseHeader                   `json:"resource"`
+	Post     HandleDiscordPublishInfoResponse `json:"post"`
+	Raw      any                              `json:"raw"`
+}
+
+type HandleDiscordPublishDataResponse struct {
+	Id        string `json:"id"`
+	ChannelId string `json:"channel_id"`
+	WebhookId string `json:"webhook_id"`
+	Message   string `json:"message"`
+}
+
+type HandleDiscordPublishInfoResponse struct {
+	Id        string `json:"id"`
+	ChannelId string `json:"channel_id"`
+	WebhookId string `json:"webhook_id"`
+}
+
+type HandleDiscordPublishRequest struct {
+	Message    string `json:"message"`
+	WebhookUrl string `json:"webhook_url"`
+}
+
+func NewDiscord(db *sql.DB) *Discord {
+	discord := Discord{
+		model: model.NewDiscord(db),
+	}
+
+	return &discord
+}
+
+func (d *Discord) HandlePublish(w http.ResponseWriter, r *http.Request) {
+	SetJsonContentType(w)
+
+	response := HandleDiscordPublishResponse{
+		Resource: ResponseHeader{
+			Ok: true,
+		},
+		Post: HandleDiscordPublishInfoResponse{},
+	}
+
+	bodyContent, bodyErr := io.ReadAll(r.Body)
+
+	if bodyErr != nil {
+		response.Resource.Ok = false
+		response.Resource.Error = "error on read message body"
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, http.StatusBadRequest)
+
+		return
+	}
+
+	var post HandleDiscordPublishRequest
+
+	jsonErr := json.Unmarshal(bodyContent, &post)
+
+	if jsonErr != nil {
+		response.Resource.Ok = false
+		response.Resource.Error = "some fields can be in invalid format"
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, http.StatusBadRequest)
+
+		return
+	}
+
+	post.Message = strings.TrimSpace(post.Message)
+	post.WebhookUrl = strings.TrimSpace(post.WebhookUrl)
+
+	if post.Message == "" || post.WebhookUrl == "" {
+		response.Resource.Ok = false
+		response.Resource.Error = "field `message` and `webhook_url` can not be empty"
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, http.StatusBadRequest)
+
+		return
+	}
+
+	post.WebhookUrl += "?wait=true" // To return response body
+
+	payload := map[string]string{"content": post.Message}
+	jsonPayload, jsonPayloadErr := json.Marshal(payload)
+
+	if jsonPayloadErr != nil {
+		response.Resource.Ok = false
+		response.Resource.Error = "some fields can be in invalid format on sending message"
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, http.StatusBadRequest)
+
+		return
+	}
+
+	respMessage, errMessage := http.Post(post.WebhookUrl, "application/json", bytes.NewBuffer(jsonPayload))
+	if errMessage != nil {
+		response.Resource.Ok = false
+		response.Resource.Error = errMessage.Error()
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, http.StatusBadRequest)
+
+		return
+	}
+
+	defer respMessage.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(respMessage.Body)
+
+	response.Raw = string(bodyBytes)
+
+	var responseContent HandleDiscordPublishDataResponse
+
+	json.Unmarshal(bodyBytes, &responseContent)
+
+	if responseContent.Id == "" {
+		response.Resource.Ok = false
+		response.Resource.Error = responseContent.Message
+
+		WriteErrorResponse(w, response, "/discord/publish", response.Resource.Error, respMessage.StatusCode)
+
+		return
+	}
+
+	response.Post.ChannelId = responseContent.ChannelId
+	response.Post.WebhookId = responseContent.WebhookId
+	response.Post.Id = responseContent.Id
+
+	WriteSuccessResponse(w, response)
+}
